@@ -25,7 +25,7 @@
             padding: 40px;
             border-radius: 20px;
             box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-            max-width: 400px;
+            max-width: 500px;
         }
         .spinner {
             border: 4px solid #f3f3f3;
@@ -57,54 +57,86 @@
         .error {
             color: #ef4444;
         }
+        .debug-info {
+            text-align: left;
+            background: #f5f5f5;
+            padding: 15px;
+            margin-top: 20px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-family: monospace;
+            max-height: 300px;
+            overflow-y: auto;
+        }
     </style>
 </head>
 <body>
     <div class="container" id="message">
         <div class="spinner"></div>
-        <h2>loading PDF</h2>
-        <p>your file is on the way...</p>
+        <h2>Loading PDF</h2>
+        <p>Your file is on the way...</p>
+        <div class="debug-info" id="debug"></div>
     </div>
 
     <script>
+        function log(message) {
+            const debugDiv = document.getElementById('debug');
+            debugDiv.innerHTML += `<div>${new Date().toLocaleTimeString()}: ${message}</div>`;
+            console.log(message);
+        }
+
         const urlParams = new URLSearchParams(window.location.search);
         const docId = urlParams.get('id');
+
+        log(`Document ID: ${docId}`);
 
         if (!docId) {
             document.getElementById('message').innerHTML = `
                 <div class="error">❌</div>
-                <h2>fail</h2>
-                <p>missing file ID</p>
+                <h2>Error</h2>
+                <p>Missing document ID</p>
             `;
         } else {
-            // 從 Supabase 獲取文件
-            fetch(`https://gkumjgngmmtbiyzhpswg.supabase.co/rest/v1/documents?id=eq.${docId}&select=html_content,text_content`, {
+            const apiUrl = `https://gkumjgngmmtbiyzhpswg.supabase.co/rest/v1/documents?id=eq.${docId}&select=html_content,text_content`;
+            log(`Fetching from: ${apiUrl}`);
+
+            fetch(apiUrl, {
                 headers: {
                     'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdrdW1qZ25nbW10Yml5emhwc3dnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjAyNTU1ODIsImV4cCI6MjA3NTgzMTU4Mn0.KlQHT5M6-A1WYKdRYcDji7ndyjvCnUCvzbZAFUuW1GY',
                     'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdrdW1qZ25nbW10Yml5emhwc3dnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjAyNTU1ODIsImV4cCI6MjA3NTgzMTU4Mn0.KlQHT5M6-A1WYKdRYcDji7ndyjvCnUCvzbZAFUuW1GY'
                 }
             })
-            .then(response => response.json())
+            .then(response => {
+                log(`Response status: ${response.status}`);
+                return response.json();
+            })
             .then(data => {
+                log(`Data received: ${JSON.stringify(data).substring(0, 200)}...`);
+                
                 if (data && data.length > 0) {
                     const htmlContent = data[0].html_content;
+                    log(`HTML content length: ${htmlContent ? htmlContent.length : 0} characters`);
                     
-                    // 創建隱藏元素來渲染 HTML
+                    if (!htmlContent) {
+                        throw new Error('HTML content is empty');
+                    }
+                    
                     const element = document.createElement('div');
                     element.innerHTML = htmlContent;
                     element.style.position = 'absolute';
                     element.style.left = '-9999px';
                     document.body.appendChild(element);
                     
-                    // 轉換為 PDF
+                    log('Starting PDF conversion...');
+                    
                     const opt = {
                         margin: [10, 10, 10, 10],
-                        filename: `JSBO valuation.pdf`,
+                        filename: `document_${Date.now()}.pdf`,
                         image: { type: 'jpeg', quality: 0.98 },
                         html2canvas: { 
                             scale: 2,
                             useCORS: true,
-                            logging: false
+                            logging: true
                         },
                         jsPDF: { 
                             unit: 'mm', 
@@ -114,26 +146,34 @@
                     };
                     
                     html2pdf().set(opt).from(element).save().then(() => {
+                        log('PDF generated successfully!');
                         document.getElementById('message').innerHTML = `
                             <div class="success">✅</div>
-                            <h2>Download successfully</h2>
-                            <p>PDF on the way...</p>
+                            <h2>Download Complete</h2>
+                            <p>PDF download started!<br>Check your downloads folder</p>
                         `;
+                    }).catch(err => {
+                        log(`PDF generation error: ${err.message}`);
+                        throw err;
                     });
                 } else {
+                    log('No documents found in response');
                     document.getElementById('message').innerHTML = `
                         <div class="error">❌</div>
-                        <h2>file</h2>
-                        <p>can't find file</p>
+                        <h2>Error</h2>
+                        <p>Document not found</p>
+                        <div class="debug-info" id="debug"></div>
                     `;
                 }
             })
             .catch(error => {
-                console.error('Error:', error);
+                log(`Error: ${error.message}`);
+                console.error('Full error:', error);
                 document.getElementById('message').innerHTML = `
                     <div class="error">❌</div>
-                    <h2>loading fail</h2>
-                    <p>can't retrive file</p>
+                    <h2>Loading Failed</h2>
+                    <p>Cannot retrieve document</p>
+                    <div class="debug-info">${error.message}</div>
                 `;
             });
         }
